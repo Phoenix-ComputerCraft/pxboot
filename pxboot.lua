@@ -1,9 +1,12 @@
+if not (fs or term or os.pullEvent) then error("This program must be run from CraftOS.") end
+
 local expect = require "cc.expect"
 
 local entries = {}
 local entry_names = {}
 local bootcfg = {}
 local cmds = {}
+local userGlobals = {}
 
 local function unbios(path, ...)
     -- UnBIOS by JackMacWindows
@@ -21,9 +24,9 @@ local function unbios(path, ...)
     -- * `turtle.equip[Left|Right]`
     -- Licensed under the MIT license
     local kernelArgs = table.pack(...)
-    local keptAPIs = {bit32 = true, bit = true, ccemux = true, config = true, coroutine = true, debug = true, ffi = true, fs = true, http = true, io = true, jit = true, mounter = true, os = true, periphemu = true, peripheral = true, redstone = true, rs = true, term = true, utf8 = true, _HOST = true, _CC_DEFAULT_SETTINGS = true, _CC_DISABLE_LUA51_FEATURES = true, _VERSION = true, assert = true, collectgarbage = true, error = true, gcinfo = true, getfenv = true, getmetatable = true, ipairs = true, loadstring = true, math = true, newproxy = true, next = true, pairs = true, pcall = true, rawequal = true, rawget = true, rawlen = true, rawset = true, select = true, setfenv = true, setmetatable = true, string = true, table = true, tonumber = true, tostring = true, type = true, unpack = true, xpcall = true, turtle = true, pocket = true, commands = true, _G = true}
+    local keptAPIs = {bit32 = true, bit = true, ccemux = true, config = true, coroutine = true, debug = true, ffi = true, fs = true, http = true, io = true, jit = true, mounter = true, os = true, periphemu = true, peripheral = true, redstone = true, rs = true, term = true, utf8 = true, _HOST = true, _CC_DEFAULT_SETTINGS = true, _CC_DISABLE_LUA51_FEATURES = true, _VERSION = true, assert = true, collectgarbage = true, error = true, gcinfo = true, getfenv = true, getmetatable = true, ipairs = true, load = true, loadstring = true, math = true, newproxy = true, next = true, pairs = true, pcall = true, rawequal = true, rawget = true, rawlen = true, rawset = true, select = true, setfenv = true, setmetatable = true, string = true, table = true, tonumber = true, tostring = true, type = true, unpack = true, xpcall = true, turtle = true, pocket = true, commands = true, _G = true}
     local t = {}
-    for k in pairs(_G) do if not keptAPIs[k] then table.insert(t, k) end end
+    for k in pairs(_G) do if not keptAPIs[k] and not userGlobals[k] then table.insert(t, k) end end
     for _,k in ipairs(t) do _G[k] = nil end
     local native = _G.term.native()
     for _, method in ipairs { "nativePaletteColor", "nativePaletteColour", "screenshot" } do
@@ -154,6 +157,11 @@ function cmds.args(t)
     for i = 1, #t.args do bootcfg.args[#bootcfg.args+1] = t.args[i] end
 end
 
+function cmds.global(t)
+    _G[t.key] = t.value
+    userGlobals[t.key] = true
+end
+
 function cmds.insmod(t)
     -- TODO
 end
@@ -165,7 +173,9 @@ local function boot(entry)
     term.setCursorPos(1, 1)
     for i = 0, 15 do term.setPaletteColor(2^i, term.nativePaletteColor(2^i)) end
     for _, v in ipairs(entry.commands) do
-        local ok, err = pcall(cmds[v.cmd], v)
+        local ok, err
+        if type(v) == "function" then ok, err = pcall(v)
+        else ok, err = pcall(cmds[v.cmd], v) end
         if not ok then
             bootcfg = {}
             printError("Could not run boot script: " .. err)
@@ -207,8 +217,9 @@ local config = setmetatable({
             local retval = {name = name, commands = {}}
             for i = 1, n do
                 local c = entry[i]
-                if type(c) ~= "table" or not c.cmd then error("bad command entry #" .. i .. (c == nil and " (unknown command)" or " (missing arguments)"), 2) end
-                if c.cmd == "description" then retval.description = c.text
+                if (type(c) ~= "table" and type(c) ~= "function") or not c.cmd then error("bad command entry #" .. i .. (c == nil and " (unknown command)" or " (missing arguments)"), 2) end
+                if type(c) == "function" then retval.commands[#retval.commands+1] = c
+                elseif c.cmd == "description" then retval.description = c.text
                 elseif cmds[c.cmd] then retval.commands[#retval.commands+1] = c
                 else error("bad command entry #" .. i .. " (unknown command " .. c.cmd .. ")", 2) end
             end
@@ -264,6 +275,11 @@ local config = setmetatable({
         end
     end,
     craftos = {cmd = "craftos"},
+    global = function(key)
+        return function(value)
+            return {cmd = "global", key = key, value = value}
+        end
+    end,
     insmod = function(name)
         expect(1, name, "string")
         return setmetatable({cmd = "insmod", name = name, line = debug.getinfo(2, "l").currentline}, {__call = function(self, args)

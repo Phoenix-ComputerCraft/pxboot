@@ -36,6 +36,7 @@ A menu entry is defined by writing `menuentry`, followed by the name of the entr
 * `chainloader "path"`: The path to a CraftOS program to load.
 * `args "text" ["text"...]`: Arguments to the kernel or chainloader.
 * `args {"text"[, "text"...]}`: Arguments to the kernel or chainloader (table form).
+* `global "name" "value"`: Set a global variable before booting.
 * `craftos`: Boots to CraftOS.
 * `insmod "name" [{args}]`: Loads a module from the `modules` folder.
 
