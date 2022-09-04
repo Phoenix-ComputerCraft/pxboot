@@ -23,8 +23,9 @@ local function unbios(path, ...)
     -- * `peripheral`
     -- * `turtle.equip[Left|Right]`
     -- Licensed under the MIT license
+    local old_dofile = _G.dofile
     local kernelArgs = table.pack(...)
-    local keptAPIs = {bit32 = true, bit = true, ccemux = true, config = true, coroutine = true, debug = true, ffi = true, fs = true, http = true, io = true, jit = true, mounter = true, os = true, periphemu = true, peripheral = true, redstone = true, rs = true, term = true, utf8 = true, _HOST = true, _CC_DEFAULT_SETTINGS = true, _CC_DISABLE_LUA51_FEATURES = true, _VERSION = true, assert = true, collectgarbage = true, error = true, gcinfo = true, getfenv = true, getmetatable = true, ipairs = true, load = true, loadstring = true, math = true, newproxy = true, next = true, pairs = true, pcall = true, rawequal = true, rawget = true, rawlen = true, rawset = true, select = true, setfenv = true, setmetatable = true, string = true, table = true, tonumber = true, tostring = true, type = true, unpack = true, xpcall = true, turtle = true, pocket = true, commands = true, _G = true}
+    local keptAPIs = {bit32 = true, bit = true, ccemux = true, config = true, coroutine = true, debug = true, ffi = true, fs = true, http = true, io = true, jit = true, mounter = true, os = true, periphemu = true, peripheral = true, redstone = true, rs = true, term = true, utf8 = true, _HOST = true, _CC_DEFAULT_SETTINGS = true, _CC_DISABLE_LUA51_FEATURES = true, _VERSION = true, assert = true, collectgarbage = true, error = true, gcinfo = true, getfenv = true, getmetatable = true, ipairs = true, load = true, loadstring = true, math = true, newproxy = true, next = true, pairs = true, pcall = true, rawequal = true, rawget = true, rawlen = true, rawset = true, select = true, setfenv = true, setmetatable = true, string = true, table = true, tonumber = true, tostring = true, type = true, unpack = true, xpcall = true, turtle = true, pocket = true, commands = true, _G = true, sound = true}
     local t = {}
     for k in pairs(_G) do if not keptAPIs[k] and not userGlobals[k] then table.insert(t, k) end end
     for _,k in ipairs(t) do _G[k] = nil end
@@ -102,7 +103,7 @@ local function unbios(path, ...)
         -- Apparently this has to be done *after* redefining term.native
         local function restoreValue(tab, idx, name, hint)
             local i, key, value = 1, debug.getupvalue(tab[idx], hint)
-            while key ~= name and key ~= nil do
+            while key ~= name and not (key == nil and i > 1) do
                 key, value = debug.getupvalue(tab[idx], i)
                 i=i+1
             end
@@ -124,6 +125,11 @@ local function unbios(path, ...)
                 i=i+1
             end
             _G.peripheral = value or peripheral
+        end
+        -- Restore Discord plugin in CraftOS-PC
+        if debug.getupvalue(old_dofile, 2) == "status" then
+            local _, status = debug.getupvalue(old_dofile, 2)
+            _, _G.discord = debug.getupvalue(status, 4)
         end
     end
     coroutine.yield()
