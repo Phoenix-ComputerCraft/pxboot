@@ -418,11 +418,11 @@ while true do
             config.timeout, tm = nil
             drawEntries()
         end
-        if ev[2] == keys.down and selection < #entries then
+        if (ev[2] == keys.down or ev[2] == keys.numPad2) and selection < #entries then
             selection = selection + 1
             if selection > scroll + enth - 1 then scroll = scroll + 1 end
             drawEntries()
-        elseif ev[2] == keys.up and selection > 1 then
+        elseif (ev[2] == keys.up or ev[2] == keys.numPad8) and selection > 1 then
             selection = selection - 1
             if selection < scroll then scroll = scroll - 1 end
             drawEntries()
