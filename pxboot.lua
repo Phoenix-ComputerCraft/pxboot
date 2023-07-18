@@ -1,12 +1,15 @@
 if not (fs or term or os.pullEvent) then error("This program must be run from CraftOS.") end
 
 local expect = require "cc.expect"
+if not getmetatable(expect) then setmetatable(expect, {__call = function(self, ...) return self.expect(...) end})
+elseif not getmetatable(expect).__call then getmetatable(expect).__call = function(self, ...) return self.expect(...) end end
 
 local entries = {}
 local entry_names = {}
 local bootcfg = {}
 local cmds = {}
 local userGlobals = {}
+local monitor
 
 local function unbios(path, ...)
     -- UnBIOS by JackMacWindows
@@ -29,7 +32,7 @@ local function unbios(path, ...)
     local t = {}
     for k in pairs(_G) do if not keptAPIs[k] and not userGlobals[k] then table.insert(t, k) end end
     for _,k in ipairs(t) do _G[k] = nil end
-    local native = _G.term.native()
+    local native = monitor or _G.term.native()
     for _, method in ipairs { "nativePaletteColor", "nativePaletteColour", "screenshot" } do
         native[method] = _G.term[method]
     end
@@ -168,6 +171,13 @@ function cmds.global(t)
     userGlobals[t.key] = true
 end
 
+function cmds.monitor(t)
+    if peripheral.hasType then assert(peripheral.hasType(t.name, "monitor"), "peripheral '" .. t.name .. "' does not exist or is not a monitor")
+    else assert(peripheral.getType(t.name) == "monitor", "peripheral '" .. t.name .. "' does not exist or is not a monitor") end
+    monitor = peripheral.wrap(t.name)
+    term.redirect(monitor)
+end
+
 function cmds.insmod(t)
     -- TODO
 end
@@ -285,6 +295,9 @@ local config = setmetatable({
         return function(value)
             return {cmd = "global", key = key, value = value}
         end
+    end,
+    monitor = function(name)
+        return {cmd = "monitor", name = name}
     end,
     insmod = function(name)
         expect(1, name, "string")
