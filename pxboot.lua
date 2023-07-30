@@ -211,6 +211,7 @@ local function boot(entry)
     return true
 end
 
+local runningDir
 local config = setmetatable({
     title = "Phoenix pxboot",
     titlecolor = colors.white,
@@ -241,6 +242,30 @@ local config = setmetatable({
             end
             entries[#entries+1] = retval
             entry_names[name] = retval
+        end
+    end,
+    include = function(path)
+        expect(1, path, "string")
+        for _, v in ipairs(fs.find(fs.combine(runningDir, path))) do
+            repeat
+                local fn, err = loadfile(v, "t", getfenv(2))
+                if not fn then
+                    printError("Could not load config file: " .. err)
+                    print("Press any key to continue...")
+                    os.pullEvent("key")
+                    break
+                end
+                local old = runningDir
+                runningDir = fs.getDir(v)
+                local ok, err = pcall(fn)
+                runningDir = old
+                if not ok then
+                    printError("Failed to execute config file: " .. err)
+                    print("Press any key to continue...")
+                    os.pullEvent("key")
+                    break
+                end
+            until true
         end
     end,
 
@@ -321,7 +346,9 @@ repeat
         os.pullEvent("key")
         break
     end
+    runningDir = shell and fs.getDir(shell.getRunningProgram()) or "pxboot"
     local ok, err = pcall(fn)
+    runningDir = nil
     if not ok then
         printError("Failed to execute config file: " .. err)
         print("Press any key to continue...")

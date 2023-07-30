@@ -1,5 +1,5 @@
 defaultentry = "Phoenix"
-timeout = 0
+timeout = 5
 backgroundcolor = colors.black
 selectcolor = colors.orange
 titlecolor = colors.lightGray
@@ -14,3 +14,5 @@ menuentry "CraftOS" {
     description "Boot into CraftOS.";
     craftos;
 }
+
+include "config.lua.d/*"
