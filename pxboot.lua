@@ -71,28 +71,34 @@ local function unbios(path, ...)
         term.setCursorPos(1, 1)
         term.setCursorBlink(true)
         term.clear()
-        local file = fs.open(path, "r")
-        if file == nil then
-            term.setCursorBlink(false)
-            term.setTextColor(16384)
-            term.write("Could not find kernel. pxboot cannot continue.")
-            term.setCursorPos(1, 2)
-            term.write("Press any key to continue")
-            coroutine.yield("key")
-            os.shutdown()
-        end
-        local fn, err = loadstring(file.readAll(), "=kernel")
-        file.close()
-        if fn == nil then
-            term.setCursorBlink(false)
-            term.setTextColor(16384)
-            term.write("Could not load kernel. pxboot cannot continue.")
-            term.setCursorPos(1, 2)
-            term.write(err)
-            term.setCursorPos(1, 3)
-            term.write("Press any key to continue")
-            coroutine.yield("key")
-            os.shutdown()
+        local fn
+        if type(path) == "function" then
+            fn = path
+        else
+            local file = fs.open(path, "r")
+            if file == nil then
+                term.setCursorBlink(false)
+                term.setTextColor(16384)
+                term.write("Could not find kernel. pxboot cannot continue.")
+                term.setCursorPos(1, 2)
+                term.write("Press any key to continue")
+                coroutine.yield("key")
+                os.shutdown()
+            end
+            local err
+            fn, err = loadstring(file.readAll(), "=kernel")
+            file.close()
+            if fn == nil then
+                term.setCursorBlink(false)
+                term.setTextColor(16384)
+                term.write("Could not load kernel. pxboot cannot continue.")
+                term.setCursorPos(1, 2)
+                term.write(err)
+                term.setCursorPos(1, 3)
+                term.write("Press any key to continue")
+                coroutine.yield("key")
+                os.shutdown()
+            end
         end
         setfenv(fn, _G)
         local oldshutdown = os.shutdown
@@ -179,7 +185,11 @@ function cmds.monitor(t)
 end
 
 function cmds.insmod(t)
-    -- TODO
+    local path
+    if t.name:match "^/" then path = t.name
+    elseif t.name:find "[/%.]" then path = fs.combine(shell and fs.getDir(shell.getRunningProgram()) or "pxboot", t.name)
+    else path = fs.combine(shell and fs.getDir(shell.getRunningProgram()) or "pxboot", "modules/" .. t.name .. ".lua") end
+    assert(loadfile(path, nil, setmetatable({entries = entries, bootcfg = bootcfg, cmds = cmds, userGlobals = userGlobals, unbios = unbios}, {__index = _ENV})))(t.args, path)
 end
 
 local function boot(entry)
