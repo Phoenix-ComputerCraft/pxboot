@@ -1,169 +1,123 @@
-if not (fs or term or os.pullEvent) then error("This program must be run from CraftOS.") end
+if not (term or fs) then error("This program must be run in a ComputerCraft environment.") end
+if os.pullEvent then error("This program must not be run from CraftOS.") end
 
-local expect = require "cc.expect"
-if not getmetatable(expect) then setmetatable(expect, {__call = function(self, ...) return self.expect(...) end})
-elseif not getmetatable(expect).__call then getmetatable(expect).__call = function(self, ...) return self.expect(...) end end
+local function expect(idx, val, ...)
+    local tt = type(val)
+    for _, v in ipairs{...} do
+        if v == tt then
+            return val
+        end
+    end
+    error("bad argument #" .. idx .. " (expected " .. table.concat({...}, ", ") .. ", got " .. tt, 3)
+end
+
+colors = {
+    white = 1,
+    orange = 2,
+    magenta = 4,
+    lime = 8,
+    yellow = 16,
+    lightBlue = 32,
+    pink = 64,
+    gray = 128, grey = 128,
+    lightGray = 256, lightGrey = 256,
+    cyan = 512,
+    purple = 1024,
+    green = 2048,
+    brown = 4096,
+    blue = 8192,
+    red = 16384,
+    black = 32768
+}
+
+colours = colors
 
 local entries = {}
 local entry_names = {}
 local bootcfg = {}
 local cmds = {}
-local userGlobals = {}
 local monitor
+local term = term
+local basepath = "/pxboot"
 
-local function unbios(path, ...)
-    -- UnBIOS by JackMacWindows
-    -- This will undo most of the changes/additions made in the BIOS, but some things may remain wrapped if `debug` is unavailable
-    -- To use, just place a `bios.lua` in the root of the drive, and run this program
-    -- Here's a list of things that are irreversibly changed:
-    -- * both `bit` and `bit32` are kept for compatibility
-    -- * string metatable blocking (on old versions of CC)
-    -- In addition, if `debug` is not available these things are also irreversibly changed:
-    -- * old Lua 5.1 `load` function (for loading from a function)
-    -- * `loadstring` prefixing (before CC:T 1.96.0)
-    -- * `http.request`
-    -- * `os.shutdown` and `os.reboot`
-    -- * `peripheral`
-    -- * `turtle.equip[Left|Right]`
-    -- Licensed under the MIT license
-    local old_dofile = _G.dofile
-    local kernelArgs = table.pack(...)
-    local keptAPIs = {bit32 = true, bit = true, ccemux = true, config = true, coroutine = true, debug = true, ffi = true, fs = true, http = true, io = true, jit = true, mounter = true, os = true, periphemu = true, peripheral = true, redstone = true, rs = true, term = true, utf8 = true, _HOST = true, _CC_DEFAULT_SETTINGS = true, _CC_DISABLE_LUA51_FEATURES = true, _VERSION = true, assert = true, collectgarbage = true, error = true, gcinfo = true, getfenv = true, getmetatable = true, ipairs = true, load = true, loadstring = true, math = true, newproxy = true, next = true, pairs = true, pcall = true, rawequal = true, rawget = true, rawlen = true, rawset = true, select = true, setfenv = true, setmetatable = true, string = true, table = true, tonumber = true, tostring = true, type = true, unpack = true, xpcall = true, turtle = true, pocket = true, commands = true, _G = true, sound = true}
-    local t = {}
-    for k in pairs(_G) do if not keptAPIs[k] and not userGlobals[k] then table.insert(t, k) end end
-    for _,k in ipairs(t) do _G[k] = nil end
-    local native = monitor or _G.term.native()
-    for _, method in ipairs { "nativePaletteColor", "nativePaletteColour", "screenshot" } do
-        native[method] = _G.term[method]
+local function panic(msgA, msgB)
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(1)
+    term.setCursorPos(1, 1)
+    term.setCursorBlink(true)
+    term.clear()
+    term.setCursorBlink(false)
+    term.setTextColor(colors.red)
+    term.write(msgA .. ". pxboot cannot continue.")
+    term.setCursorPos(1, 2)
+    if msgB then
+        term.write(msgB)
+        term.setCursorPos(1, 3)
     end
-    _G.term = native
-    _G.http.checkURL = _G.http.checkURLAsync
-    _G.http.websocket = _G.http.websocketAsync
-    if _G.commands then _G.commands = _G.commands.native end
-    if _G.turtle then _G.turtle.native, _G.turtle.craft = nil end
-    local delete = {os = {"version", "pullEventRaw", "pullEvent", "run", "loadAPI", "unloadAPI", "sleep"}, http = {"get", "post", "put", "delete", "patch", "options", "head", "trace", "listen", "checkURLAsync", "websocketAsync"}, fs = {"complete", "isDriveRoot"}}
-    for k,v in pairs(delete) do for _,a in ipairs(v) do _G[k][a] = nil end end
-    -- Set up TLCO
-    -- This functions by crashing `rednet.run` by removing `os.pullEventRaw`. Normally
-    -- this would cause `parallel` to throw an error, but we replace `error` with an
-    -- empty placeholder to let it continue and return without throwing. This results
-    -- in the `pcall` returning successfully, preventing the error-displaying code
-    -- from running - essentially making it so that `os.shutdown` is called immediately
-    -- after the new BIOS exits.
-    --
-    -- From there, the setup code is placed in `term.native` since it's the first
-    -- thing called after `parallel` exits. This loads the new BIOS and prepares it
-    -- for execution. Finally, it overwrites `os.shutdown` with the new function to
-    -- allow it to be the last function called in the original BIOS, and returns.
-    -- From there execution continues, calling the `term.redirect` dummy, skipping
-    -- over the error-handling code (since `pcall` returned ok), and calling
-    -- `os.shutdown()`. The real `os.shutdown` is re-added, and the new BIOS is tail
-    -- called, which effectively makes it run as the main chunk.
-    local olderror = error
-    _G.error = function() end
-    _G.term.redirect = function() end
-    function _G.term.native()
-        _G.term.native = nil
-        _G.term.redirect = nil
-        _G.error = olderror
-        term.setBackgroundColor(32768)
-        term.setTextColor(1)
-        term.setCursorPos(1, 1)
-        term.setCursorBlink(true)
-        term.clear()
-        local fn
-        if type(path) == "function" then
-            fn = path
-        else
-            local file = fs.open(path, "r")
-            if file == nil then
-                term.setCursorBlink(false)
-                term.setTextColor(16384)
-                term.write("Could not find kernel. pxboot cannot continue.")
-                term.setCursorPos(1, 2)
-                term.write("Press any key to continue")
-                coroutine.yield("key")
-                os.shutdown()
-            end
-            local err
-            fn, err = loadstring(file.readAll(), "=kernel")
-            file.close()
-            if fn == nil then
-                term.setCursorBlink(false)
-                term.setTextColor(16384)
-                term.write("Could not load kernel. pxboot cannot continue.")
-                term.setCursorPos(1, 2)
-                term.write(err)
-                term.setCursorPos(1, 3)
-                term.write("Press any key to continue")
-                coroutine.yield("key")
-                os.shutdown()
-            end
+    term.write("Press any key to continue")
+    coroutine.yield("key")
+    os.shutdown()
+    while true do coroutine.yield() end
+end
+
+local function go(path, ...)
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(1)
+    term.setCursorPos(1, 1)
+    term.setCursorBlink(true)
+    term.clear()
+    local fn
+    if type(path) == "function" then
+        fn = path
+    else
+        local file = fs.open(path, "r")
+        if file == nil then
+            panic("Could not find kernel")
         end
-        setfenv(fn, _G)
-        local oldshutdown = os.shutdown
-        os.shutdown = function()
-            os.shutdown = oldshutdown
-            return fn(table.unpack(kernelArgs, 1, kernelArgs.n))
+        local err
+        fn, err = (loadstring or load)(file.readAll(), "=kernel")
+        file.close()
+        if fn == nil then
+            panic("Could not load kernel", err)
         end
     end
-    if debug then
-        -- Restore functions that were overwritten in the BIOS
-        -- Apparently this has to be done *after* redefining term.native
-        local function restoreValue(tab, idx, name, hint)
-            local i, key, value = 1, debug.getupvalue(tab[idx], hint)
-            while key ~= name and not (key == nil and i > 1) do
-                key, value = debug.getupvalue(tab[idx], i)
-                i=i+1
-            end
-            tab[idx] = value or tab[idx]
+    setfenv(fn, _G)
+    colors, colours = nil
+    return fn(table.unpack(kernelArgs, 1, kernelArgs.n))
+end
+
+local function craftos(path, ...)
+    if path then
+        local file, err = fs.open("/startup.lua", "w")
+        if not file then
+            panic("Could not edit startup.lua")
         end
-        restoreValue(_G, "loadstring", "nativeloadstring", 1)
-        restoreValue(_G, "load", "nativeload", 5)
-        restoreValue(http, "request", "nativeHTTPRequest", 3)
-        restoreValue(os, "shutdown", "nativeShutdown", 1)
-        restoreValue(os, "reboot", "nativeReboot", 1)
-        if turtle then
-            restoreValue(turtle, "equipLeft", "v", 1)
-            restoreValue(turtle, "equipRight", "v", 1)
+        file.write('fs.delete("/startup.lua") shell.run(' .. ("%q"):format(path))
+        for _, v in ipairs{...} do
+            local tt = type(v)
+            if tt == "string" then file.write(', ' .. ("%q"):format(v))
+            elseif tt == "number" then file.write(', ' .. v)
+            elseif tt == "boolean" or tt == "nil" then file.write(', ' .. tostring(v))
+            else panic("Invalid argument type") end
         end
-        do
-            local i, key, value = 1, debug.getupvalue(peripheral.isPresent, 2)
-            while key ~= "native" and key ~= nil do
-                key, value = debug.getupvalue(peripheral.isPresent, i)
-                i=i+1
-            end
-            _G.peripheral = value or peripheral
-        end
-        -- Restore Discord plugin in CraftOS-PC
-        if debug.getupvalue(old_dofile, 2) == "status" then
-            local _, status = debug.getupvalue(old_dofile, 2)
-            _, _G.discord = debug.getupvalue(status, 4)
-        end
+        file.write(')')
+        file.close()
     end
-    coroutine.yield()
+    go("/rom/bios.lua")
 end
 
 function cmds.kernel(t)
-    bootcfg.fn = unbios
+    bootcfg.fn = go
     bootcfg.args = {t.path}
 end
 
 function cmds.chainloader(t)
-    bootcfg.fn = shell and shell.run or function(path, ...) os.run({}, path, ...) end
+    bootcfg.fn = craftos
     bootcfg.args = {t.path}
 end
 
 function cmds.craftos(t)
-    bootcfg.fn = function()
-        term.setTextColor(colors.yellow)
-        print(os.version())
-        term.setTextColor(colors.white)
-        if settings.get("motd.enable") then
-            if shell then shell.run("motd")
-            else os.run({}, "/rom/programs/motd.lua") end
-        end
-    end
+    bootcfg.fn = craftos
     bootcfg.args = {}
 end
 
@@ -174,21 +128,23 @@ end
 
 function cmds.global(t)
     _G[t.key] = t.value
-    userGlobals[t.key] = true
 end
 
 function cmds.monitor(t)
     if peripheral.hasType then assert(peripheral.hasType(t.name, "monitor"), "peripheral '" .. t.name .. "' does not exist or is not a monitor")
     else assert(peripheral.getType(t.name) == "monitor", "peripheral '" .. t.name .. "' does not exist or is not a monitor") end
-    monitor = peripheral.wrap(t.name)
-    term.redirect(monitor)
+    monitor = {}
+    for _, v in ipairs(peripheral.getMethods(t.name)) do
+        monitor[v] = function(...) return peripheral.call(t.name, v, ...) end
+    end
+    term = monitor
 end
 
 function cmds.insmod(t)
     local path
     if t.name:match "^/" then path = t.name
-    elseif t.name:find "[/%.]" then path = fs.combine(shell and fs.getDir(shell.getRunningProgram()) or "pxboot", t.name)
-    else path = fs.combine(shell and fs.getDir(shell.getRunningProgram()) or "pxboot", "modules/" .. t.name .. ".lua") end
+    elseif t.name:find "[/%.]" then path = fs.combine(basepath, t.name)
+    else path = fs.combine(basepath, "modules/" .. t.name .. ".lua") end
     assert(loadfile(path, nil, setmetatable({entries = entries, bootcfg = bootcfg, cmds = cmds, userGlobals = userGlobals, unbios = unbios}, {__index = _ENV})))(t.args, path)
 end
 

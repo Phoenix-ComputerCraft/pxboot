@@ -3,12 +3,14 @@ pxboot is a bootloader for ComputerCraft primarily designed for the [Phoenix ope
 
 It provides a boot selection menu with built-in UnBIOS support, with an extensible module system allowing custom filesystems and more. The configuration file is a plain Lua file, so it can also be generated on-the-fly with Lua code.
 
+This branch contains a version that can be loaded as a BIOS program. To load CraftOS, the original CraftOS BIOS must be located at `/rom/bios.lua`.
+
 ## Usage
-pxboot is a CraftOS program that can be loaded from the shell, usually through a startup file. It expects to find a config file named `config.lua` in the same directory - if pxboot isn't loaded from the shell, it must be at `/pxboot/config.lua`.
+pxboot (bare-metal) is a ComputerCraft BIOS that is loaded directly on boot. It expects to find a config file named `config.lua` in either `/pxboot` or `/rom/pxboot`.
 
-Once the config file is written, simply run pxboot and a boot selector will appear. Use the arrow keys to select an entry, and press enter to select. pxboot will follow the instructions in the entry, booting the OS.
+Once the config file is written and the BIOS is installed, simply reboot and a boot selector will appear. Use the arrow keys to select an entry, and press enter to select. pxboot will follow the instructions in the entry, booting the OS.
 
-If no config file is found, a limited shell is available with pxboot commands as well as CraftOS commands. This will allow navigation and manual booting.
+If no config file is found, a limited shell is available with pxboot commands. This will allow navigation and manual booting.
 
 ## Configuration
 A config file consists of variable definitions and menu entries. Variables are used to define the look and behavior of the boot screen. Menu entries consist of a list of commands followed by `;`, defining the steps to boot the OS as well as some other parameters.
