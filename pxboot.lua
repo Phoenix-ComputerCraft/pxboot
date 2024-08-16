@@ -1,3 +1,4 @@
+local ok, err = pcall(function()
 if not (term or fs) then error("This program must be run in a ComputerCraft environment.") end
 if os.pullEvent then error("This program must not be run from CraftOS.") end
 
@@ -31,6 +32,198 @@ colors = {
 }
 
 colours = colors
+
+local function window(parent, x, y, width, height)
+    local win = {}
+
+    function win.close() end
+    function win.getSize() return width, height end
+    function win.getPosition() return x, y end
+    function win.getParent() return parent end
+    function win.getPaletteColor(color) return parent.getPaletteColor(color) end
+    function win.setPaletteColor(color, r, g, b) return parent.setPaletteColor(color, r, g, b) end
+    win.getPaletteColour = win.getPaletteColor
+    win.setPaletteColour = win.setPaletteColor
+
+    function win.reposition(_x, _y, w, h, p)
+        expect(1, _x, "number", "nil")
+        expect(2, _y, "number", "nil")
+        expect(3, w, "number", "nil")
+        expect(4, h, "number", "nil")
+        x = _x or x
+        y = _y or y
+        width = w or width
+        height = h or height
+        parent = p or parent
+    end
+
+    function win.resize(w, h)
+        expect(1, w, "number", "nil")
+        expect(2, h, "number", "nil")
+        width = w or width
+        height = h or height
+    end
+
+    setmetatable(win, {__name = "Terminal"})
+    local cx, cy, cblink = 1, 1, parent.getCursorBlink()
+    local fg, bg = parent.getTextColor(), parent.getBackgroundColor()
+    function win.write(text)
+        expect(1, text, "string")
+        if cy < 1 or cy > height or cx > width or #text == 0 then return end
+        if cx < 1 then
+            local d = math.min(1 - cx, #text)
+            cx = cx + d
+            if d == #text then return end
+            text = text:sub(d)
+        end
+        local d = math.min(width - cx + 1, #text)
+        parent.setCursorPos(x+cx-1, y+cy-1)
+        parent.setTextColor(fg)
+        parent.setBackgroundColor(bg)
+        parent.write(text:sub(1, d))
+        cx = cx + d
+    end
+
+    function win.blit(text, fgs, bgs)
+        expect(1, text, "string")
+        expect(2, fgs, "string")
+        expect(3, bgs, "string")
+        if cy < 1 or cy > height or cx > width or #text == 0 then return end
+        if cx < 1 then
+            local d = math.min(1 - cx, #text)
+            cx = cx + d
+            if d == #text then return end
+            text = text:sub(d)
+        end
+        local d = math.min(width - cx + 1, #text)
+        parent.setCursorPos(x+cx-1, y+cy-1)
+        parent.blit(text:sub(1, d), fgs:sub(1, d), bgs:sub(1, d))
+        fg, bg = parent.getTextColor(), parent.getBackgroundColor()
+        cx = cx + d
+    end
+
+    function win.clear()
+        parent.setTextColor(fg)
+        parent.setBackgroundColor(bg)
+        for yy = 1, height do
+            parent.setCursorPos(x, y+yy-1)
+            parent.write((" "):rep(width))
+        end
+    end
+
+    function win.clearLine()
+        parent.setTextColor(fg)
+        parent.setBackgroundColor(bg)
+        parent.setCursorPos(x, y+cy-1)
+        parent.write((" "):rep(width))
+    end
+
+    function win.getCursorPos()
+        return cx, cy
+    end
+
+    function win.setCursorPos(_x, _y)
+        expect(1, _x, "number")
+        expect(2, _y, "number")
+        cx, cy = _x, _y
+        parent.setCursorPos(x+cx-1, y+cy-1)
+    end
+
+    function win.getCursorBlink()
+        return cblink
+    end
+
+    function win.setCursorBlink(blink)
+        expect(1, blink, "boolean")
+        cblink = blink
+        parent.setCursorBlink(blink)
+    end
+
+    function win.isColor()
+        return parent.isColor()
+    end
+
+    function win.scroll(lines)
+        expect(1, lines, "number")
+        if math.abs(lines) >= width then
+            return win.clear()
+        elseif lines > 0 then
+            for i = lines + 1, height do
+                local l = win.getLine(i)
+                parent.setCursorPos(x, y+i-lines-1)
+                parent.blit(table.unpack(l, 1, 3))
+            end
+            for i = height - lines + 1, height do
+                parent.setCursorPos(x, y+i-1)
+                parent.setTextColor(fg)
+                parent.setBackgroundColor(bg)
+                parent.write((' '):rep(width))
+            end
+        elseif lines < 0 then
+            for i = 1, height + lines do
+                local l = win.getLine(i)
+                parent.setCursorPos(x, y+i-lines-1)
+                parent.blit(table.unpack(l, 1, 3))
+            end
+            for i = 1, -lines do
+                parent.setCursorPos(x, y+i-1)
+                parent.setTextColor(fg)
+                parent.setBackgroundColor(bg)
+                parent.write((' '):rep(width))
+            end
+        else return end
+    end
+
+    function win.getTextColor()
+        return fg
+    end
+
+    function win.setTextColor(color)
+        expect(1, color, "number")
+        fg = color
+        parent.setTextColor(color)
+    end
+
+    function win.getBackgroundColor()
+        return bg
+    end
+
+    function win.setBackgroundColor(color)
+        expect(1, color, "number")
+        bg = color
+        parent.setBackgroundColor(color)
+    end
+
+    function win.getLine(_y)
+        expect(1, _y, "number")
+        local l = parent.getLine(y+_y-1)
+        if not l then return nil end
+        return {l[1]:sub(x, x+width-1), l[2]:sub(x, x+width-1), l[3]:sub(x, x+width-1)}
+    end
+
+    function win.restoreCursor()
+        parent.setCursorPos(x+cx-1, y+cy-1)
+        parent.setCursorBlink(cblink)
+    end
+    win.isColour = win.isColor
+    win.getTextColour = win.getTextColor
+    win.setTextColour = win.setTextColor
+    win.getBackgroundColour = win.getBackgroundColor
+    win.setBackgroundColour = win.setBackgroundColor
+
+    return win
+end
+
+local function loadfile(path, mode, env)
+    local file, err = fs.open(path, "r")
+    if not file then return nil, err end
+    local data = file.readAll()
+    file.close()
+    return load(data, "@" .. path, mode, env)
+end
+
+local keys = setmetatable({}, {__index = _G})
+assert(loadfile("/rom/apis/keys.lua", "t", keys))()
 
 local entries = {}
 local entry_names = {}
@@ -83,7 +276,7 @@ local function go(path, ...)
     end
     setfenv(fn, _G)
     colors, colours = nil
-    return fn(table.unpack(kernelArgs, 1, kernelArgs.n))
+    return fn(...)
 end
 
 local function craftos(path, ...)
@@ -145,7 +338,7 @@ function cmds.insmod(t)
     if t.name:match "^/" then path = t.name
     elseif t.name:find "[/%.]" then path = fs.combine(basepath, t.name)
     else path = fs.combine(basepath, "modules/" .. t.name .. ".lua") end
-    assert(loadfile(path, nil, setmetatable({entries = entries, bootcfg = bootcfg, cmds = cmds, userGlobals = userGlobals, unbios = unbios}, {__index = _ENV})))(t.args, path)
+    assert(loadfile(path, nil, setmetatable({entries = entries, bootcfg = bootcfg, cmds = cmds, userGlobals = {}, unbios = go}, {__index = _ENV})))(t.args, path)
 end
 
 local function boot(entry)
@@ -160,21 +353,51 @@ local function boot(entry)
         else ok, err = pcall(cmds[v.cmd], v) end
         if not ok then
             bootcfg = {}
-            printError("Could not run boot script: " .. err)
-            print("Press any key to continue.")
-            os.pullEventRaw("key")
-            return false
+            error("Could not run boot script: " .. err)
         end
     end
     if not bootcfg.fn then
         bootcfg = {}
-        printError("Could not run boot script: missing boot type command")
-        print("Press any key to continue.")
-        os.pullEventRaw("key")
-        return false
+        error("Could not run boot script: missing boot type command")
     end
     bootcfg.fn(table.unpack(bootcfg.args))
     return true
+end
+
+local function splitPath(p)
+    local retval = {}
+    for m in p:gmatch("[^/]+") do table.insert(retval, m) end
+    return retval
+end
+
+local function aux_find(parts, p)
+    local ok, t = pcall(fs.list, p or "")
+    if #parts == 0 then return fs.getName(p) elseif not ok then return nil end
+    local parts2 = {}
+    for i, v in ipairs(parts) do parts2[i] = v end
+    local name = table.remove(parts2, 1)
+    local retval = {}
+    for _, k in pairs(t) do if k:match("^" .. name:gsub("([%%%.])", "%%%1"):gsub("%*", "%.%*") .. "$") then retval[k] = aux_find(parts2, fs.combine(p or "", k)) end end
+    return retval
+end
+
+local function combineKeys(t, prefix)
+    prefix = prefix or ""
+    if t == nil then return {} end
+    local retval = {}
+    for k,v in pairs(t) do
+        if type(v) == "string" then table.insert(retval, prefix .. k)
+        else for _,w in ipairs(combineKeys(v, prefix .. k .. "/")) do table.insert(retval, w) end end
+    end
+    return retval
+end
+
+local function find(wildcard)
+    expect(1, wildcard, "string")
+    local retval = {}
+    for _,v in ipairs(combineKeys(aux_find(splitPath(wildcard)))) do table.insert(retval, v) end
+    table.sort(retval)
+    return retval
 end
 
 local runningDir
@@ -212,24 +435,18 @@ local config = setmetatable({
     end,
     include = function(path)
         expect(1, path, "string")
-        for _, v in ipairs(fs.find(fs.combine(runningDir, path))) do
+        for _, v in ipairs(find(fs.combine(runningDir, path))) do
             repeat
                 local fn, err = loadfile(v, "t", getfenv(2))
                 if not fn then
-                    printError("Could not load config file: " .. err)
-                    print("Press any key to continue...")
-                    os.pullEvent("key")
-                    break
+                    error("Could not load config file: " .. err)
                 end
                 local old = runningDir
                 runningDir = fs.getDir(v)
                 local ok, err = pcall(fn)
                 runningDir = old
                 if not ok then
-                    printError("Failed to execute config file: " .. err)
-                    print("Press any key to continue...")
-                    os.pullEvent("key")
-                    break
+                    error("Failed to execute config file: " .. err)
                 end
             until true
         end
@@ -305,21 +522,16 @@ term.clear()
 term.setCursorPos(1, 1)
 
 repeat
-    local fn, err = loadfile(shell and fs.combine(fs.getDir(shell.getRunningProgram()), "config.lua") or "pxboot/config.lua", "t", config)
+    local fn, err = loadfile("pxboot/config.lua", "t", config)
     if not fn then
-        printError("Could not load config file: " .. err)
-        print("Press any key to continue...")
-        os.pullEvent("key")
-        break
-    end
-    runningDir = shell and fs.getDir(shell.getRunningProgram()) or "pxboot"
+        fn, err = loadfile("rom/pxboot/config.lua", "t", config)
+        if not fn then error("Could not load config file: " .. err) end
+        runningDir = "rom/pxboot"
+    else runningDir = "pxboot" end
     local ok, err = pcall(fn)
     runningDir = nil
     if not ok then
-        printError("Failed to execute config file: " .. err)
-        print("Press any key to continue...")
-        os.pullEvent("key")
-        break
+        error("Failed to execute config file: " .. err)
     end
 until true
 
@@ -333,8 +545,8 @@ local function hex(n) return ("0123456789abcdef"):sub(n, n) end
 
 local w, h = term.getSize()
 local enth = h - 11
-local boxwin = window.create(term.current(), 2, 4, w - 2, h - 9)
-local entrywin = window.create(boxwin, 2, 2, w - 4, enth)
+local boxwin = window(term, 2, 4, w - 2, h - 9)
+local entrywin = window(boxwin, 2, 2, w - 4, enth)
 
 term.setBackgroundColor(config.backgroundcolor)
 term.clear()
@@ -349,7 +561,6 @@ if config.defaultentry then
     if config.timeout == 0 and boot(entries[selection]) then return end
 end
 local function drawEntries()
-    entrywin.setVisible(false)
     entrywin.setBackgroundColor(config.boxbackground or config.backgroundcolor)
     entrywin.clear()
     for i = scroll, scroll + enth - 1 do
@@ -372,8 +583,8 @@ local function drawEntries()
             entrywin.setCursorPos(2, i - scroll + 1)
         end
     end
-    entrywin.setVisible(true)
     term.setCursorPos(5, h - 5)
+    term.setBackgroundColor(config.backgroundcolor)
     term.clearLine()
     term.setTextColor(config.titlecolor)
     term.write(entries[selection].description or "")
@@ -441,3 +652,18 @@ while true do
     elseif ev[1] == "terminate" then break
     end
 end
+end)
+term.setBackgroundColor(32768)
+term.setTextColor(16384)
+term.clear()
+term.setCursorPos(1, 1)
+if not ok then
+    term.write("An error occurred while loading pxboot:")
+    term.setCursorPos(1, 2)
+    term.write(err)
+    term.setCursorPos(1, 3)
+end
+term.write("Press any key to continue")
+coroutine.yield("key")
+os.shutdown()
+while true do coroutine.yield() end
