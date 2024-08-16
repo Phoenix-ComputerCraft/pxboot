@@ -222,7 +222,7 @@ local function loadfile(path, mode, env)
     return load(data, "@" .. path, mode, env)
 end
 
-local keys = setmetatable({}, {__index = _G})
+local keys = setmetatable({dofile = function() return {} end}, {__index = _G})
 assert(loadfile("/rom/apis/keys.lua", "t", keys))()
 
 local entries = {}
