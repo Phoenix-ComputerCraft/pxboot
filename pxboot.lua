@@ -234,6 +234,8 @@ config = setmetatable({
     boxbackground = colors.black,
     selectcolor = colors.white,
     selecttext = colors.black,
+    entrybackground = nil,
+    entryforeground = nil,
     background = nil,
     defaultentry = nil,
     timeout = 30,
@@ -244,14 +246,29 @@ config = setmetatable({
             expect(2, entry, "table")
             local n = 1
             for i, v in pairs(entry) do if type(i) == "number" then n = math.max(i, n) end end
-            local retval = {name = name, commands = {}}
+            local retval = {
+                name = name,
+                commands = {},
+                entrybackground = nil,
+                entryforeground = nil
+            }
             for i = 1, n do
                 local c = entry[i]
-                if (type(c) ~= "table" and type(c) ~= "function") or not c.cmd then error("bad command entry #" .. i .. (c == nil and " (unknown command)" or " (missing arguments)"), 2) end
-                if type(c) == "function" then retval.commands[#retval.commands+1] = c
-                elseif c.cmd == "description" then retval.description = c.text
-                elseif cmds[c.cmd] then retval.commands[#retval.commands+1] = c
-                else error("bad command entry #" .. i .. " (unknown command " .. c.cmd .. ")", 2) end
+                if (type(c) ~= "table" and type(c) ~= "function") or not c.cmd then
+                    error("bad command entry #" .. i .. (c == nil and " (unknown command)" or " (missing arguments)"), 2)
+                end
+                if type(c) == "function" then
+                    retval.commands[#retval.commands+1] = c
+                elseif c.cmd == "description" then
+                    retval.description = c.text
+                elseif c.cmd == "entrycolor" then
+                    retval.entrybackground = c.background
+                    retval.entryforeground = c.foreground
+                elseif cmds[c.cmd] then
+                    retval.commands[#retval.commands+1] = c
+                else 
+                    error("bad command entry #" .. i .. " (unknown command " .. c.cmd .. ")", 2)
+                end
             end
             entries[#entries+1] = retval
             entry_names[name] = retval
@@ -292,6 +309,11 @@ config = setmetatable({
         expect(1, text, "string")
         return {cmd = "description", text = text, line = debug.getinfo(2, "l").currentline}
     end,
+    entrycolor = function(foreground, background)
+        expect(1, foreground, "number", "nil")
+        expect(2, background, "number", "nil")
+        return {cmd = "entrycolor", foreground = foreground, background = background, line = debug.getinfo(2, "l").currentline}
+    end,
     kernel = function(path)
         expect(1, path, "string")
         return {cmd = "kernel", path = path, line = debug.getinfo(2, "l").currentline}
@@ -300,25 +322,13 @@ config = setmetatable({
         expect(1, path, "string")
         return {cmd = "chainloader", path = path, line = debug.getinfo(2, "l").currentline}
     end,
-    args = function(args)
-        expect(1, args, "string", "table")
-        if type(args) == "table" then
-            return {cmd = "args", args = args, line = debug.getinfo(2, "l").currentline}
-        else
-            local t = {""}
-            local q
-            for c in args:gmatch "." do
-                if q then
-                    if c == q then q = nil
-                    else t[#t] = t[#t] .. c end
-                elseif c == '"' or c == "'" then q = c
-                elseif c == ' ' then t[#t+1] = ""
-                else t[#t] = t[#t] .. c end
-            end
-            local n = 2
-            return setmetatable({cmd = "args", args = t, line = debug.getinfo(2, "l").currentline}, {__call = function(self, arg)
-                expect(n, arg, "string")
-                n=n+1
+    args = function(...)
+        local varargs = {...}
+        local result = {cmd = "args", args = {}, line = debug.getinfo(2, "l").currentline}
+        
+        if #varargs == 0 then
+            return setmetatable(result, {__call = function(self, arg)
+                expect(2, arg, "string")
                 local t = self.args
                 local q
                 t[#t+1] = ""
@@ -332,6 +342,41 @@ config = setmetatable({
                 end
                 return self
             end})
+        elseif #varargs == 1 and type(varargs[1]) == "table" then
+            result.args = varargs[1]
+            return result
+        elseif #varargs == 1 and type(varargs[1]) == "string" then
+            local str = varargs[1]
+            local t = {""}
+            local q
+            for c in str:gmatch "." do
+                if q then
+                    if c == q then q = nil
+                    else t[#t] = t[#t] .. c end
+                elseif c == '"' or c == "'" then q = c
+                elseif c == ' ' then t[#t+1] = ""
+                else t[#t] = t[#t] .. c end
+            end
+            result.args = t
+            
+            return setmetatable(result, {__call = function(self, arg)
+                expect(2, arg, "string")
+                local t = self.args
+                local q
+                t[#t+1] = ""
+                for c in arg:gmatch "." do
+                    if q then
+                        if c == q then q = nil
+                        else t[#t] = t[#t] .. c end
+                    elseif c == '"' or c == "'" then q = c
+                    elseif c == ' ' then t[#t+1] = ""
+                    else t[#t] = t[#t] .. c end
+                end
+                return self
+            end})
+        else
+            result.args = varargs
+            return result
         end
     end,
     craftos = {cmd = "craftos"},
@@ -413,8 +458,10 @@ local function drawEntries()
             entrywin.setBackgroundColor(config.selectcolor)
             entrywin.setTextColor(config.selecttext)
         else
-            entrywin.setBackgroundColor(config.boxbackground or config.backgroundcolor)
-            entrywin.setTextColor(config.textcolor)
+            local entryBg = e.entrybackground or config.entrybackground or config.boxbackground or config.backgroundcolor
+            local entryFg = e.entryforeground or config.entryforeground or config.textcolor
+            entrywin.setBackgroundColor(entryBg)
+            entrywin.setTextColor(entryFg)
         end
         entrywin.clearLine()
         entrywin.write(#e.name > w-6 and e.name:sub(1, w-9) .. "..." or e.name)
